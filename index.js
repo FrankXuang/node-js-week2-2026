@@ -1,5 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
+const path = require('node:path');
 const { formidable } = require('formidable');  // formidable v3 用 named import
 
 // ========== 任務一：讀取上傳設定 ==========
@@ -28,6 +29,11 @@ const { formidable } = require('formidable');  // formidable v3 用 named import
 function getUploadConfig() {
   // TODO: 實作此函式
   // 提示：用 || 給預設值；MAX_FILE_SIZE_MB 是字串，記得先 Number() 轉型再換算 bytes
+  return {
+    uploadDir: process.env.UPLOAD_DIR || '/tmp',
+    maxFileSize: Number(process.env.MAX_FILE_SIZE_MB) * 1024 * 1024 || 5 * 1024 * 1024,
+    gymName: process.env.GYM_NAME || '未命名健身房'
+  };
 }
 
 // ========== 任務二：取副檔名 ==========
@@ -51,6 +57,11 @@ function getUploadConfig() {
 function getFileExtension(filename) {
   // TODO: 實作此函式
   // 提示：用 lastIndexOf('.') 找最後一個 .，toLowerCase() 轉小寫
+  const lastDotIndex = filename.lastIndexOf('.');
+  if (lastDotIndex === -1) {
+    return '';
+  }
+  return filename.slice(lastDotIndex).toLowerCase();
 }
 
 // ========== 任務三：解析檔案 metadata ==========
@@ -76,6 +87,11 @@ function getFileExtension(filename) {
 function parseFileMetadata(file) {
   // TODO: 實作此函式
   // 提示：呼叫 getFileExtension 取副檔名，Math.round(size / 1024) 算 KB
+  return {
+    filename: file.originalFilename,
+    sizeKB: Math.round(file.size / 1024),
+    ext: getFileExtension(file.originalFilename)
+  };
 }
 
 // ========== 任務四：產出 upload log 字串 ==========
@@ -98,6 +114,7 @@ function parseFileMetadata(file) {
 function formatUploadLog(meta, config) {
   // TODO: 實作此函式
   // 提示：用 template literal 組字串
+  return `[${config.gymName}] Uploaded ${meta.filename} (${meta.sizeKB} KB) → ${config.uploadDir}`;
 }
 
 // ========== 任務五：路由分派 ==========
@@ -135,6 +152,65 @@ function router(req, res, config) {
   //   - 超過 maxFileSize 時 formidable v3 發 'error' event，要用 form.on('error', ...) 接
   //   - 同時 form.parse 的 callback err 也要處理
   //   - 避免重複 res.writeHead（檢查 res.headersSent）
+  if (req.method === 'POST' && req.url === '/coaches/avatar') {
+    handleUpload(req, res, config);
+  } else {
+    handleNotFound(req, res);
+  }
+
+}
+
+// ── 404 處理 ──────────────────────────────────────────
+function handleNotFound(req, res) {
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not Found' }));
+}
+
+// ── 上傳處理 ──────────────────────────────────────────
+function handleUpload(req, res, config) {
+  const form = formidable({
+    uploadDir:   config.uploadDir,
+    maxFileSize: config.maxFileSize,
+    keepExtensions: true,
+  });
+
+  // formidable v3：超過大小限制會觸發 'error' event
+  form.on('error', (err) => {
+    if (res.headersSent) return;   // 避免重複 writeHead
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err.message }));
+  });
+
+  form.parse(req, (err, fields, files) => {
+    // parse callback 的錯誤也要處理
+    if (err) {
+      if (res.headersSent) return;
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+
+    // 沒有 file 欄位
+    const file = files.file?.[0];
+    if (!file) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No file uploaded' }));
+      return;
+    }
+
+    // 成功：組回傳資料
+    const ext      = path.extname(file.originalFilename || '');
+    const sizeKB   = Number((file.size / 1024).toFixed(2));
+    const filename = file.originalFilename;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      filename,
+      sizeKB,
+      ext,
+      savedPath: file.filepath,
+    }));
+  });
 }
 
 // ========== 任務六：建立上傳 server ==========
@@ -156,6 +232,16 @@ function router(req, res, config) {
 function createUploadServer(config) {
   // TODO: 實作此函式
   // 提示：主邏輯都在 router 裡，這邊函式內容不多
+  // 1. 資料夾不存在就自動建立
+  fs.mkdirSync(config.uploadDir, { recursive: true });
+
+  // 2. 建立 server，每個 request 交給 router
+  const server = http.createServer((req, res) => {
+    router(req, res, config);
+  });
+
+  // 3. 回傳 server
+  return server;
 }
 
 module.exports = {
