@@ -1,6 +1,5 @@
 const http = require('node:http');
 const fs = require('node:fs');
-const path = require('node:path');
 const { formidable } = require('formidable');  // formidable v3 用 named import
 
 // ========== 任務一：讀取上傳設定 ==========
@@ -199,7 +198,7 @@ function handleUpload(req, res, config) {
     }
 
     // 成功：組回傳資料
-    const ext      = path.extname(file.originalFilename || '');
+    const ext      = getFileExtension(file.originalFilename);
     const sizeKB   = Number((file.size / 1024).toFixed(2));
     const filename = file.originalFilename;
 
