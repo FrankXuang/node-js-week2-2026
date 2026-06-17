@@ -198,9 +198,10 @@ function handleUpload(req, res, config) {
     }
 
     // 成功：組回傳資料
-    const ext      = getFileExtension(file.originalFilename);
-    const sizeKB   = Number((file.size / 1024).toFixed(2));
-    const filename = file.originalFilename;
+    // const ext      = getFileExtension(file.originalFilename);
+    // const sizeKB   = Number((file.size / 1024).toFixed(2));
+    // const filename = file.originalFilename;
+    const { filename, sizeKB, ext } = parseFileMetadata(file);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
